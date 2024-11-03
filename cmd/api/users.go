@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/AbbasiMohamad/didehban/internal/data"
 	"github.com/AbbasiMohamad/didehban/internal/validator"
+	"time"
 
 	"net/http"
 )
@@ -59,9 +60,30 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
-	// Write a JSON response containing the user data along with a 201 Created status
-	// code.
-	err = app.writeJSON(w, http.StatusCreated, envelope{"user": user}, nil)
+	// After the user record has been created in the database, generate a new activation
+	// token for the user.
+	_, err = app.models.Tokens.New(user.ID, 3*24*time.Hour, data.ScopeActivation)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+	app.background(func() {
+		// As there are now multiple pieces of data that we want to pass to our email
+		// templates, we create a map to act as a 'holding structure' for the data. This
+		// contains the plaintext version of the activation token for the user, along
+		// with their ID.
+		/*		data := map[string]interface{}{
+					"activationToken": token.Plaintext,
+					"userID":          user.ID,
+				}
+				// Send the welcome email, passing in the map above as dynamic data.
+				err = app.mailer.Send(user.Email, "user_welcome.tmpl", data) */
+		if err != nil {
+			app.logger.PrintError(err, nil)
+		}
+	})
+
+	err = app.writeJSON(w, http.StatusAccepted, envelope{"user": user}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
